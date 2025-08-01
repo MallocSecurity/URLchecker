@@ -2,7 +2,7 @@ version: '3'
 
 services:
   flask:
-    container_name: safesurf-container
+    container_name: malloc-check-container
     build:
       context: .
       dockerfile: Dockerfile

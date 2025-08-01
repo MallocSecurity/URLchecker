@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . /app
 
 # Install any needed dependencies specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cach e-dir -r requirements.txt
 
 # Expose the Flask port
 EXPOSE 5000
