@@ -3,11 +3,22 @@ import tldextract
 import model
 import time
 
+import requests
 
 class Controller:
     def __init__(self):
         self.BASE_SCORE = 50  # default trust score of URL out of 100
         self.model = model
+
+    def check_url_reachability(self, url):
+        try:
+            response = requests.get(url, timeout=5)
+            if 200 <= response.status_code < 400:
+                return True, response.status_code
+            else:
+                return False, response.status_code
+        except requests.exceptions.RequestException as e:
+            return False, str(e)
 
     def main(self, url):
         try:
@@ -15,6 +26,22 @@ class Controller:
             print(time.time(), "entry")
             url = self.model.include_protocol(url)
             print(time.time(), "include_protocol")
+            is_reachable, status = self.check_url_reachability(url)
+            if not is_reachable:
+                return {
+                    'status': 'ERROR',
+                    'url': url,
+                    'trust_score': 0,
+                    'reason': f'URL is not reachable: {status}',
+                    'response_status': status,
+                    'age': None,
+                    'rank': None,
+                    'is_url_shortened': None,
+                    'hsts_support': None,
+                    'ssl': None,
+                    'whois': None,
+                }
+
             url_validation = self.model.validate_url(url)
             print(time.time(), "validate_url")
 

@@ -47,19 +47,19 @@
   <header class="bg-white shadow-sm sticky top-0 z-10 py-4">
     <div class="container mx-auto px-4 flex justify-between items-center">
       <a href="/" class="flex items-center space-x-2">
-          <img src="/static/logo.svg" alt="Malloc Logo" class="h-8 w-auto">
-
-        </a>
+        <img src="/static/logo.svg" alt="Malloc Logo" class="h-8 w-auto">
+      </a>
     </div>
   </header>
 
   <main class="flex-grow container mx-auto px-4 py-16 max-w-4xl">
     <div class="text-center mb-12">
       <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900">
-      Stop Phishing with Malloc
+        Stop Phishing with Malloc
       </h1>
       <p class="mt-4 text-lg text-gray-600">
-       Instantly detect phishing URLs with our AI-powered analysis, keeping you safe online.</p>
+        Instantly detect phishing URLs with our AI-powered analysis, keeping you safe online.
+      </p>
     </div>
 
     <form id="scanForm" action="/" method="post" class="flex flex-col sm:flex-row gap-4 items-center mb-6">
@@ -89,16 +89,17 @@
       <div class="mb-6 text-center">
         <h3 class="text-xl font-semibold text-gray-900">Scanned URL: {{ output.url }}</h3>
       </div>
+
       {% if output.status == "SUCCESS" %}
       <div class="mb-6 text-center">
         <div class="text-white py-3 px-6 rounded-lg text-lg font-semibold inline-block {% if output.trust_score < 60 %}bg-red-600{% else %}bg-green-600{% endif %}">
           {% if output.trust_score < 60 %}
-          ⚠️ SUSPICIOUS — Trust Score: {{output.trust_score}}/100
+          ⚠️ SUSPICIOUS — Trust Score: {{ output.trust_score }}/100
           <div class="mt-4 text-sm text-red-800 bg-red-50 border border-red-200 p-4 rounded">
             <p><strong>Reason:</strong> {{ output.reason if output.reason is defined else 'This domain exhibits patterns typical of phishing, such as recent registration, URL obfuscation, or lack of HTTPS enforcement.' }}</p>
           </div>
           {% else %}
-          SAFE — Trust Score: {{output.trust_score}}/100
+          ✅ SAFE — Trust Score: {{ output.trust_score }}/100
           {% endif %}
         </div>
       </div>
@@ -106,15 +107,15 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <div class="card bg-gray-50 p-4 rounded-lg">
           <h4 class="font-semibold text-gray-700">Domain Age</h4>
-          <p class="text-sm text-gray-600">{{output.age}}</p>
+          <p class="text-sm text-gray-600">{{ output.age }}</p>
         </div>
         <div class="card bg-gray-50 p-4 rounded-lg">
           <h4 class="font-semibold text-gray-700">Global Rank</h4>
-          <p class="text-sm text-gray-600">{{output.rank}}</p>
+          <p class="text-sm text-gray-600">{{ output.rank }}</p>
         </div>
         <div class="card bg-gray-50 p-4 rounded-lg">
           <h4 class="font-semibold text-gray-700">HTTP Status</h4>
-          <p class="text-sm text-gray-600">{{output.response_status}}</p>
+          <p class="text-sm text-gray-600">{{ output.response_status }}</p>
         </div>
         <div class="card bg-gray-50 p-4 rounded-lg">
           <h4 class="font-semibold text-gray-700">URL Shortened?</h4>
@@ -155,6 +156,15 @@
           {% endfor %}
         </div>
       </div>
+
+      {% elif output.status == "ERROR" %}
+      <div class="bg-red-100 border border-red-300 text-red-800 p-6 rounded-lg text-center">
+        <h3 class="text-xl font-bold mb-2">🚫 Website Not Active</h3>
+        <p class="text-sm">
+          {{ "The submitted URL could not be reached or is invalid." }}
+        </p>
+      </div>
+
       {% else %}
       <div class="bg-yellow-100 p-4 rounded-lg">
         <p class="text-gray-800"><strong>Note:</strong> {{ output.msg }}</p>
