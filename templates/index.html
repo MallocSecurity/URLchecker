@@ -1,256 +1,166 @@
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Malloc detects suspicious and malicious domains to protect you from phishing and scams with privacy-focused technology.">
-    <meta name="keywords" content="Malloc, phishing protection, malicious domains, Malloc, domain safety, cybersecurity, privacy">
-    <meta name="author" content="Malloc">
-    <meta name="robots" content="index, follow">
-    <meta name="theme-color" content="#6D28D9">
-    <meta property="og:title" content="Malloc | Suspicious Domain Detector by Malloc">
-    <meta property="og:description" content=" Malloc detects suspicious and malicious domains to protect you from phishing and scams with privacy-focused technology.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="{{ request.url }}">
- <link rel="icon" href="/static/favicon.ico" sizes="any">
-    <meta property="og:image:alt" content="Malloc">
-    <meta property="og:site_name" content="Malloc">
-    <title>Malloc | Suspicious Domain Detector by Malloc</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F9FAFB;
-            color: #1F2937;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow-x: hidden;
-        }
-        .btn-primary {
-            transition: all 0.2s ease;
-        }
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        .info-item {
-            transition: all 0.2s ease;
-            word-break: break-word;
-            hyphens: auto;
-        }
-        .info-item:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header-nav a {
-            transition: color 0.2s ease;
-        }
-        .header-nav a:hover {
-            color: #6D28D9;
-        }
-        .footer a {
-            transition: color 0.2s ease;
-        }
-        .footer a:hover {
-            color: #6D28D9;
-        }
-        .suspicious-banner {
-            transition: all 0.2s ease;
-        }
-        .suspicious-banner:hover {
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            border: 0;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Malloc protects your digital identity with AI-powered suspicious domain detection, giving you peace of mind online.">
+  <meta name="keywords" content="Malloc, cybersecurity, domain checker, phishing detector, secure browsing, AI privacy">
+  <meta name="author" content="Malloc">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#6D28D9">
+  <meta property="og:title" content="Malloc | Smarter Domain Detection, Powered by Privacy">
+  <meta property="og:description" content="Real-time suspicious URL analysis and trust scoring. Protect yourself from phishing and scams with Malloc’s privacy-first tech.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
+  <meta property="og:image" content="/static/og-image.png">
+  <meta property="og:site_name" content="Malloc">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <title>Malloc | Smarter Domain Detection, Powered by Privacy</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #F9FAFB;
+      color: #1F2937;
+    }
+    .btn-primary {
+      background: linear-gradient(to right, #6D28D9, #5B21B6);
+      color: white;
+      font-weight: 600;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-primary:hover {
+      transform: scale(1.03);
+      box-shadow: 0 8px 20px rgba(109, 40, 217, 0.25);
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+    }
+    input::placeholder {
+      color: #9CA3AF;
+    }
+  </style>
 </head>
-<body class="flex flex-col">
-    <header class="w-full bg-white shadow-sm py-4 sticky top-0 z-10">
-        <div class="container mx-auto px-4 flex justify-between items-center">
-            <a href="/" class="flex items-center space-x-2">
-                <h1 class="text-2xl font-bold text-[#6D28D9]">Malloc</h1>
-                <span class="text-sm text-gray-500">helping you stay safe and private online</span>
-            </a>
+<body class="flex flex-col min-h-screen">
+  <header class="bg-white shadow-sm sticky top-0 z-10 py-4">
+    <div class="container mx-auto px-4 flex justify-between items-center">
+      <a href="/" class="text-2xl font-bold text-[#6D28D9]">Malloc</a>
+      <nav class="space-x-6 text-sm font-medium">
+        <a href="https://mallocprivacy.com/about" class="text-gray-600 hover:text-[#6D28D9]">About</a>
+      </nav>
+    </div>
+  </header>
 
+  <main class="flex-grow container mx-auto px-4 py-16 max-w-4xl">
+    <div class="text-center mb-12">
+      <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900">
+        Real-Time Domain Risk Analysis
+      </h1>
+      <p class="mt-4 text-lg text-gray-600">
+        Instantly check URLs for phishing, scams, and privacy risks using Malloc's advanced threat detection.
+      </p>
+    </div>
+
+    <form action="/" method="post" class="flex flex-col sm:flex-row gap-4 items-center mb-10">
+      <input
+        type="text"
+        name="url"
+        placeholder="Paste URL to analyze"
+        required
+        class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]"
+      />
+      <button
+        type="submit"
+        class="btn-primary px-6 py-3 rounded-lg"
+      >
+        Scan Now
+      </button>
+    </form>
+
+    {% if output != "NA" %}
+    <section class="bg-white p-8 rounded-lg shadow-md">
+      {% if output.status == "SUCCESS" %}
+      <div class="mb-6 text-center">
+        <div class="text-white py-3 px-6 rounded-lg text-lg font-semibold inline-block {% if output.trust_score < 60 %}bg-red-600{% else %}bg-green-600{% endif %}">
+          {% if output.trust_score < 60 %}
+⚠️ SUSPICIOUS — Trust Score: {{output.trust_score}}/100
+<div class="mt-4 text-sm text-red-800 bg-red-50 border border-red-200 p-4 rounded">
+  <p><strong>Reason:</strong> {{ output.reason if output.reason is defined else 'This domain exhibits patterns typical of phishing, such as recent registration, URL obfuscation, or lack of HTTPS enforcement.' }}</p>
+</div>
+{% endif %}
         </div>
-    </header>
+      </div>
 
-    <main class="flex-grow container mx-auto px-4 py-12 max-w-4xl">
-        <!-- Centered Title -->
-        <div class="mb-12 text-center">
-            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">
-                Checked before you clicked by Malloc
-            </h1>
-            <p class="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
-                Detect suspicious domains instantly with Malloc's privacy-first technology.
-            </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">Domain Age</h4>
+          <p class="text-sm text-gray-600">{{output.age}}</p>
         </div>
-
-        <!-- Description -->
-        <div class="mb-8 bg-white p-6 rounded-lg shadow-sm border-l-4 border-[#6D28D9]">
-            <p class="text-gray-700">
-                Protect yourself from <strong>phishing attacks</strong> with our <strong>privacy-focused</strong> detection technology. Surf safe with <strong>Malloc</strong>.
-            </p>
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">Global Rank</h4>
+          <p class="text-sm text-gray-600">{{output.rank}}</p>
         </div>
-
-        <!-- Form -->
-        <form action="/" method="post" class="flex flex-col sm:flex-row gap-4 mb-12">
-            <input
-                type="text"
-                name="url"
-                placeholder="Enter URL to Check"
-                required
-                class="flex-grow px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#6D28D9]"
-            />
-            <button
-                type="submit"
-                class="btn-primary bg-gray-900 text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#5B21B6]"
-                onclick="showLoadingSpinner()"
-            >
-                Check URL
-            </button>
-        </form>
-
-        <!-- Results -->
-        {% if output != "NA" %}
-        <div class="result bg-white p-8 rounded-lg shadow-sm">
-            {% if output.status == "SUCCESS" %}
-            <!-- Suspicious Status Banner -->
-            <div class="suspicious-banner mb-6 p-4 rounded-lg text-center font-semibold {% if output.trust_score < 60 %} bg-red-800 text-white border border-red-200 {% else %} bg-green-800  text-white border border-green-200 {% endif %}">
-                {% if output.trust_score < 60 %}
-                <span>⚠️ This domain is <strong>SUSPICIOUS</strong> with a Trust Score of {{output.trust_score}}/100</span>
-                {% else %}
-                <span>✅ This domain is <strong>SAFE</strong> with a Trust Score of {{output.trust_score}}/100</span>
-                {% endif %}
-            </div>
-
-            <!-- URL Info -->
-            <div class="url-info bg-gray-50 p-6 rounded-lg mb-6">
-                <p class="break-words"><strong>URL:</strong> {{output.url}}</p>
-                {% if output.msg is defined %}
-                <p class="break-words">{{output.msg}}</p>
-                {% endif %}
-            </div>
-
-
-
-            <!-- Technical Details -->
-            <div class="info-section mt-8">
-                <h3 class="text-xl font-semibold border-b border-gray-200 pb-2 mb-4 text-gray-900">Technical Details</h3>
-                <div class="info-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">Global Rank</p>
-                        <p class="text-gray-600 break-words">{{output.rank}}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">HTTP Status Code</p>
-                        <p class="text-gray-600 break-words">{{output.response_status}}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">Domain Age</p>
-                        <p class="text-gray-600 break-words">{{output.age}}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">Use of URL Shortener</p>
-                        <p class="text-gray-600 break-words">{% if output.is_url_shortened == 1 %} YES {% else %} NO {% endif %}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">HSTS Support</p>
-                        <p class="text-gray-600 break-words">{% if output.hsts_support == 1 %} YES {% else %} NO {% endif %}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">IP instead of Domain</p>
-                        <p class="text-gray-600 break-words">{% if output.ip_present == 1 %} YES {% else %} NO {% endif %}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">URL Redirects</p>
-                        <p class="text-gray-600 break-words">
-                            {% if output.url_redirects == 0 %}
-                            NO
-                            {% else %}
-                            {% for value in output.url_redirects %}
-                            {{ value }}&nbsp;
-                            {% endfor %}
-                            {% endif %}
-                        </p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">IP of Domain</p>
-                        <p class="text-gray-600 break-words">{{output.ip}}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">Too Long URL</p>
-                        <p class="text-gray-600 break-words">{% if output.too_long_url == 1 %} YES {% else %} NO {% endif %}</p>
-                    </div>
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">Too Deep URL</p>
-                        <p class="text-gray-600 break-words">{% if output.too_deep_url == 1 %} YES {% else %} NO {% endif %}</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SSL Certificate -->
-            {% if output.ssl != 0 %}
-            <div class="ssl-section mt-8">
-                <h3 class="text-xl font-semibold border-b border-gray-200 pb-2 mb-4 text-gray-900">SSL Certificate Details</h3>
-                <div class="info-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {% for key, value in output.ssl.items() %}
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">{{ key }}</p>
-                        <p class="text-gray-600 break-words">{{ value }}</p>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- WHOIS Data -->
-            <div class="whois-section mt-8">
-                <h3 class="text-xl font-semibold border-b border-gray-200 pb-2 mb-4 text-gray-900">WHOIS Data</h3>
-                <div class="info-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {% for key, value in output.whois.items() %}
-                    <div class="info-item bg-gray-50 p-4 rounded-lg">
-                        <p class="font-bold text-gray-700 break-words">{{ key }}</p>
-                        <p class="text-gray-600 break-words">{{ value }}</p>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% else %}
-            <div class="bg-gray-50 p-6 rounded-lg mt-6">
-                <p class="break-words"><strong>URL:</strong> {{output.url}}</p>
-                <p class="break-words"><strong>Message:</strong> {{output.msg}}</p>
-            </div>
-            {% endif %}
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">HTTP Status</h4>
+          <p class="text-sm text-gray-600">{{output.response_status}}</p>
         </div>
-        {% endif %}
-    </main>
-
-    <footer class="w-full bg-white py-6 mt-auto shadow-sm">
-        <div class="container mx-auto px-4 flex flex-col sm:flex-row justify-between items-center text-gray-600 text-sm">
-            <div class="flex items-center space-x-2 mb-4 sm:mb-0">
-
-                <span aria-hidden="true">🔒</span>
-                <span>Made by</span>
-                <a href="https://www.mallocprivacy.com" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#6D28D9] hover:text-[#5B21B6]">
-                    Malloc 
-                </a>
-
-            </div>
-            <nav class="flex space-x-4">
-                <a href="https://www.mallocprivacy.com/about" target="_blank" rel="noopener noreferrer" class="hover:text-[#6D28D9]">About</a>
-               </nav>
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">URL Shortened?</h4>
+          <p class="text-sm text-gray-600">{% if output.is_url_shortened %}Yes{% else %}No{% endif %}</p>
         </div>
-    </footer>
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">HSTS Support</h4>
+          <p class="text-sm text-gray-600">{% if output.hsts_support %}Yes{% else %}No{% endif %}</p>
+        </div>
+        <div class="card bg-gray-50 p-4 rounded-lg">
+          <h4 class="font-semibold text-gray-700">SSL Certificate</h4>
+          <p class="text-sm text-gray-600">{% if output.ssl != 0 %}Valid{% else %}Missing or Invalid{% endif %}</p>
+        </div>
+      </div>
+
+      {% if output.ssl != 0 %}
+      <div class="mt-10">
+        <h3 class="text-xl font-semibold text-gray-900 mb-4">SSL Details</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {% for key, value in output.ssl.items() %}
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <p class="text-sm font-bold text-gray-700">{{ key }}</p>
+            <p class="text-sm text-gray-600">{{ value }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="mt-10">
+        <h3 class="text-xl font-semibold text-gray-900 mb-4">WHOIS Records</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {% for key, value in output.whois.items() %}
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <p class="text-sm font-bold text-gray-700">{{ key }}</p>
+            <p class="text-sm text-gray-600">{{ value }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="bg-yellow-100 p-4 rounded-lg">
+        <p class="text-gray-800"><strong>Note:</strong> {{ output.msg }}</p>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+
+  <footer class="bg-white py-6 mt-auto shadow-sm">
+    <div class="container mx-auto px-4 text-sm text-gray-600 flex flex-col sm:flex-row justify-between items-center">
+      <p>Made by <a href="https://www.mallocprivacy.com" class="text-[#6D28D9] hover:text-[#5B21B6] font-semibold" target="_blank" rel="noopener">Malloc</a></p>
+      <div class="mt-4 sm:mt-0">
+        <a href="https://www.mallocprivacy.com/about" class="hover:text-[#6D28D9]">About</a>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>
