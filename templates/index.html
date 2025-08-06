@@ -130,7 +130,17 @@
           <p class="text-sm text-gray-600">{% if output.ssl != 0 %}Valid{% else %}Missing or Invalid{% endif %}</p>
         </div>
       </div>
-
+     <div class="mt-10">
+        <h3 class="text-xl font-semibold text-gray-900 mb-4">WHOIS Records</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {% for key, value in output.whois.items() %}
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <p class="text-sm font-bold text-gray-700">{{ key }}</p>
+            <p class="text-sm text-gray-600">{{ value }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
       {% if output.ssl != 0 %}
       <div class="mt-10">
         <h3 class="text-xl font-semibold text-gray-900 mb-4">SSL Details</h3>
@@ -145,17 +155,7 @@
       </div>
       {% endif %}
 
-      <div class="mt-10">
-        <h3 class="text-xl font-semibold text-gray-900 mb-4">WHOIS Records</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {% for key, value in output.whois.items() %}
-          <div class="bg-gray-50 p-4 rounded-lg">
-            <p class="text-sm font-bold text-gray-700">{{ key }}</p>
-            <p class="text-sm text-gray-600">{{ value }}</p>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
+
 
       {% elif output.status == "ERROR" %}
       <div class="bg-red-100 border border-red-300 text-red-800 p-6 rounded-lg text-center">

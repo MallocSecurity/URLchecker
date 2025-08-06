@@ -1,6 +1,6 @@
 #!/bin/bash
 
-APP_NAME="malloc-phishing-app"
+APP_NAME="phishing-app"
 RESOURCE_GROUP="malloc-phishing"
 ACR_NAME="mallocsecurityar"
 IMAGE_TAG=$(date +%s)  # Use current timestamp as a unique tag
