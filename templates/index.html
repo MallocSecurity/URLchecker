@@ -46,24 +46,23 @@
 <body class="flex flex-col min-h-screen">
   <header class="bg-white shadow-sm sticky top-0 z-10 py-4">
     <div class="container mx-auto px-4 flex justify-between items-center">
-      <a href="/" class="text-2xl font-bold text-[#6D28D9]">Malloc</a>
-      <nav class="space-x-6 text-sm font-medium">
-        <a href="https://mallocprivacy.com/about" class="text-gray-600 hover:text-[#6D28D9]">About</a>
-      </nav>
+      <a href="/" class="flex items-center space-x-2">
+          <img src="/static/logo.svg" alt="Malloc Logo" class="h-8 w-auto">
+
+        </a>
     </div>
   </header>
 
   <main class="flex-grow container mx-auto px-4 py-16 max-w-4xl">
     <div class="text-center mb-12">
       <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900">
-        Real-Time Domain Risk Analysis
+      Stop Phishing with Malloc
       </h1>
       <p class="mt-4 text-lg text-gray-600">
-        Instantly check URLs for phishing, scams, and privacy risks using Malloc's advanced threat detection.
-      </p>
+       Instantly detect phishing URLs with our AI-powered analysis, keeping you safe online.</p>
     </div>
 
-    <form action="/" method="post" class="flex flex-col sm:flex-row gap-4 items-center mb-10">
+    <form id="scanForm" action="/" method="post" class="flex flex-col sm:flex-row gap-4 items-center mb-6">
       <input
         type="text"
         name="url"
@@ -72,6 +71,7 @@
         class="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]"
       />
       <button
+        id="scanBtn"
         type="submit"
         class="btn-primary px-6 py-3 rounded-lg"
       >
@@ -79,17 +79,27 @@
       </button>
     </form>
 
+    <!-- Loading message -->
+    <div id="loading" class="hidden text-center text-purple-700 font-semibold mb-10">
+      🔍 Scanning... Please wait.
+    </div>
+
     {% if output != "NA" %}
     <section class="bg-white p-8 rounded-lg shadow-md">
+      <div class="mb-6 text-center">
+        <h3 class="text-xl font-semibold text-gray-900">Scanned URL: {{ output.url }}</h3>
+      </div>
       {% if output.status == "SUCCESS" %}
       <div class="mb-6 text-center">
         <div class="text-white py-3 px-6 rounded-lg text-lg font-semibold inline-block {% if output.trust_score < 60 %}bg-red-600{% else %}bg-green-600{% endif %}">
           {% if output.trust_score < 60 %}
-⚠️ SUSPICIOUS — Trust Score: {{output.trust_score}}/100
-<div class="mt-4 text-sm text-red-800 bg-red-50 border border-red-200 p-4 rounded">
-  <p><strong>Reason:</strong> {{ output.reason if output.reason is defined else 'This domain exhibits patterns typical of phishing, such as recent registration, URL obfuscation, or lack of HTTPS enforcement.' }}</p>
-</div>
-{% endif %}
+          ⚠️ SUSPICIOUS — Trust Score: {{output.trust_score}}/100
+          <div class="mt-4 text-sm text-red-800 bg-red-50 border border-red-200 p-4 rounded">
+            <p><strong>Reason:</strong> {{ output.reason if output.reason is defined else 'This domain exhibits patterns typical of phishing, such as recent registration, URL obfuscation, or lack of HTTPS enforcement.' }}</p>
+          </div>
+          {% else %}
+          SAFE — Trust Score: {{output.trust_score}}/100
+          {% endif %}
         </div>
       </div>
 
@@ -162,5 +172,15 @@
       </div>
     </div>
   </footer>
+
+  <!-- JavaScript to show loading -->
+  <script>
+    document.getElementById("scanForm").addEventListener("submit", function () {
+      document.getElementById("loading").classList.remove("hidden");
+      const scanBtn = document.getElementById("scanBtn");
+      scanBtn.disabled = true;
+      scanBtn.innerText = "Scanning...";
+    });
+  </script>
 </body>
 </html>

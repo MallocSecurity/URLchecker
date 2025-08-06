@@ -44,8 +44,8 @@ def validate_url(url):
 
 def include_protocol(url):
     try:
-        if not url.startswith('http://') and not url.startswith('https://'):
-            url = 'https://' + url
+        if not url.startswith(('http://', 'https://')):
+            return 'http://' + url
         return url
 
     except:

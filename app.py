@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from controller import Controller
 import onetimescript
 from db import db
-
+from flask import jsonify
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///domains.db'
 db.init_app(app)
@@ -27,6 +27,35 @@ def home():
 
     return render_template('index.html', output=output)
 
+
+@app.route('/api/check-domain', methods=['POST'])
+def check_domain_api():
+    try:
+        data = request.get_json()
+        url = data.get('url')
+
+        if not url:
+            return jsonify({'error': 'Missing URL'}), 400
+
+        result = controller.main(url)
+
+        # Expected result is a dict with trust_score, reason, etc.
+        return jsonify({
+            'status': result.get('status'),
+            'trust_score': result.get('trust_score'),
+            'reason': result.get('reason', 'No specific reason provided.'),
+            'url': result.get('url'),
+            'age': result.get('age'),
+            'rank': result.get('rank'),
+            'response_status': result.get('response_status'),
+            'is_url_shortened': result.get('is_url_shortened'),
+            'hsts_support': result.get('hsts_support'),
+            'ssl': result.get('ssl'),
+            'whois': result.get('whois'),
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/update-db')
 def update_db(): 
