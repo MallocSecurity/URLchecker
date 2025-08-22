@@ -5,6 +5,8 @@ from urllib.parse import urljoin
 from controller import Controller
 import onetimescript
 from db import db
+import re
+
 from flask import jsonify
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///domains.db'
@@ -26,6 +28,53 @@ def home():
         output = 'NA'
 
     return render_template('index.html', output=output)
+
+URL_REGEX = re.compile(
+    r'(https?://[^\s]+)',
+    re.IGNORECASE
+)
+
+@app.route('/message-filter', methods=['POST'])
+def message_filter():
+    try:
+        data = request.get_json()
+        message = data.get('message', '')
+
+        if not message:
+            return jsonify({'result': 'allow', 'reason': 'Missing message body'}), 200
+
+        # Extract URLs from message
+        urls = URL_REGEX.findall(message)
+
+        if not urls:
+            # No URL → allow
+            return jsonify({'result': 'allow', 'reason': 'No URL found in message'}), 200
+
+        url_to_check = urls[0]
+        result_data = controller.main(url_to_check)
+
+        # Classify based on trust_score
+        trust_score = result_data.get('trust_score', 100)
+        if trust_score < 50:
+            classification = 'phishing'
+        else:
+            classification = 'allow'
+
+        response_payload = {
+            'result': classification,
+            'trust_score': trust_score,
+            'reason': result_data.get('reason', 'No specific reason provided.'),
+            'url': url_to_check,
+            'age': result_data.get('age'),
+            'rank': result_data.get('rank'),
+            'is_url_shortened': result_data.get('is_url_shortened'),
+            'hsts_support': result_data.get('hsts_support')
+        }
+
+        return jsonify(response_payload), 200
+
+    except Exception as e:
+        return jsonify({'result': 'allow', 'reason': str(e)}), 200
 
 
 @app.route('/api/check-domain', methods=['POST'])
