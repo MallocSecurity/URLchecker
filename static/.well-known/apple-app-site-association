@@ -1,0 +1,24 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "JRXD7XLLMM.com.malloc.phishingprotect",
+        "paths": ["*"]
+      },
+      {
+        "appID": "JRXD7XLLMM.com.malloc.phishingprotect.MessageFilterExtension",
+        "paths": ["*"]
+      }
+    ]
+  },
+  "messagefilter": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "JRXD7XLLMM.com.malloc.phishingprotect.MessageFilterExtension",
+        "paths": ["/message-filter"]
+      }
+    ]
+  }
+}

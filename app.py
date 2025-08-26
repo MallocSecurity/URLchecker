@@ -17,6 +17,17 @@ with app.app_context():
 controller = Controller()
 
 
+from flask import send_file
+@app.route('/apple-app-site-association',  methods=['GET','POST'])
+def serve_apple_app_site_association():
+    return send_file('static/.well-known/apple-app-site-association', mimetype='application/json')
+
+
+@app.route('/.well-known/apple-app-site-association',  methods=['GET','POST'])
+def serve_apple_app_site_association():
+    return send_file('static/.well-known/apple-app-site-association', mimetype='application/json')
+
+
 @app.route('/',  methods=['GET','POST'])
 def home():
     
@@ -38,30 +49,27 @@ URL_REGEX = re.compile(
 def message_filter():
     try:
         data = request.get_json()
-        message = data.get('message', '')
+        # Extract message.text from the payload
+        message = data.get('query', {}).get('message', {}).get('text', '')
 
         if not message:
-            return jsonify({'result': 'allow', 'reason': 'Missing message body'}), 200
+            return jsonify({'filter': 'allow', 'reason': 'Missing message text'}), 200
 
         # Extract URLs from message
         urls = URL_REGEX.findall(message)
 
         if not urls:
-            # No URL → allow
-            return jsonify({'result': 'allow', 'reason': 'No URL found in message'}), 200
+            return jsonify({'filter': 'allow', 'reason': 'No URL found in message'}), 200
 
         url_to_check = urls[0]
-        result_data = controller.main(url_to_check)
+        result_data = controller.main(url_to_check)  # Assuming controller.main is defined
 
         # Classify based on trust_score
         trust_score = result_data.get('trust_score', 100)
-        if trust_score < 50:
-            classification = 'phishing'
-        else:
-            classification = 'allow'
+        classification = 'filter' if trust_score < 50 else 'allow'
 
         response_payload = {
-            'result': classification,
+            'filter': classification,
             'trust_score': trust_score,
             'reason': result_data.get('reason', 'No specific reason provided.'),
             'url': url_to_check,
@@ -74,8 +82,7 @@ def message_filter():
         return jsonify(response_payload), 200
 
     except Exception as e:
-        return jsonify({'result': 'allow', 'reason': str(e)}), 200
-
+        return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
 
 @app.route('/api/check-domain', methods=['POST'])
 def check_domain_api():
