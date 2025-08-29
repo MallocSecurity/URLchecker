@@ -1,0 +1,13 @@
+{
+  "messagefilter": {
+    "apps": [
+      "JRXD7XLLMM.com.malloc.phishingprotect.MessageFilterExtension",
+      "JRXD7XLLMM.com.malloc.phishingprotect"
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "JRXD7XLLMM.com.malloc.phishingprotect"
+    ]
+  }
+}
