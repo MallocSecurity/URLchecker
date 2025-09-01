@@ -83,55 +83,6 @@ def send_apns_notification(token_hex: str, notification: Payload, topic: Optiona
         return {"status": "error", "reason": "Exception", "message": str(e)}
 
 
-def send_security_alert(user_ip: str, message: str, url: str = None, reason: str = None):
-    """
-    Send security alert push notification to a user
-    """
-    if user_ip not in device_tokens:
-        logger.warning(f"No device token found for user_ip: {user_ip}")
-        return False
-
-    device_info = device_tokens[user_ip]
-    device_token = device_info['deviceToken']
-    app_bundle_id = device_info.get('app_bundle_id', BUNDLE_ID)
-
-    custom_data = {
-        "type": "security_alert",
-        "timestamp": datetime.utcnow().isoformat(),
-        "user_ip": user_ip
-    }
-
-    if url:
-        custom_data["url"] = url
-    if reason:
-        custom_data["reason"] = reason
-
-    try:
-        payload = Payload(
-            alert=message,
-            badge=1,
-            sound="default",
-            custom=custom_data
-        )
-
-        result = send_apns_notification(
-            token_hex=device_token,
-            notification=payload,
-            topic=app_bundle_id,
-            priority=NotificationPriority.High
-        )
-
-        if result["status"] == "success":
-            logger.info(f"Security alert sent to {user_ip}: {message}")
-            return True
-        else:
-            logger.error(f"Failed to send security alert to {user_ip}: {result}")
-            return False
-
-    except Exception as e:
-        logger.error(f"Error sending security alert to {user_ip}: {str(e)}")
-        return False
-
 
 # Routes
 @app.route('/apple-app-site-association', methods=['GET', 'POST'])
@@ -163,7 +114,7 @@ def get_registered_devices():
     }), 200
 
 
-def send_security_alert_to_all_users(message: str, url: str = None, reason: str = None):
+def send_security_alert_to_all_users(message, url: str = None, reason: str = None):
     """
     Send security alert push notification to ALL registered users
 
@@ -178,45 +129,42 @@ def send_security_alert_to_all_users(message: str, url: str = None, reason: str 
 
     results = {"sent": 0, "failed": 0}
 
-    for user_ip, device_info in device_tokens.items():
-        device_token = device_info['deviceToken']
-        app_bundle_id = device_info.get('app_bundle_id', BUNDLE_ID)
+    # Iterate over device_tokens, where key is the device token and value is the dictionary
+    for device_token, device_info in device_tokens.items():
+        # The device_token is already the key, so we directly use it
+        app_bundle_id = device_info.get('app_bundle_id', BUNDLE_ID)  # Get app_bundle_id, or use default BUNDLE_ID
 
         custom_data = {
-            "type": "security_alert_broadcast",
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_ip": user_ip
+            "message": message
         }
-
-        if url:
-            custom_data["ip"] = url
-        if reason:
-            custom_data["reason"] = reason
 
         try:
             payload = Payload(
-                alert=message,
-                badge=1,
-                sound="default",
+                alert=None,  # No alert for silent notifications
+                badge=None,  # No badge
+                sound=None,  # No sound
+                content_available=True,  # Enable background processing
                 custom=custom_data
             )
 
+            # Send the notification
             result = send_apns_notification(
-                token_hex=device_token,
+                token_hex=device_token,  # Use device_token
                 notification=payload,
                 topic=app_bundle_id,
                 priority=NotificationPriority.Immediate
             )
 
+            # Check if the notification was sent successfully
             if result["status"] == "success":
-                logger.info(f"Security alert sent to {user_ip}")
+                logger.info(f"Security alert sent to {device_token}")
                 results["sent"] += 1
             else:
-                logger.error(f"Failed to send security alert to {user_ip}: {result}")
+                logger.error(f"Failed to send security alert to {device_token}: {result}")
                 results["failed"] += 1
 
         except Exception as e:
-            logger.error(f"Error sending security alert to {user_ip}: {str(e)}")
+            logger.error(f"Error sending security alert to {device_token}: {str(e)}")
             results["failed"] += 1
 
     logger.info(f"Broadcast completed: {results['sent']} sent, {results['failed']} failed")
@@ -230,13 +178,17 @@ def message_filter():
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
         sender = data.get('query', {}).get('sender', 'Unknown')
         body = data.get('query', {}).get('message', {}).get('text', '')
+        # Ensure body is a string
+        if not isinstance(body, str):
+            body = str(body) if body is not None else ''
+
 
         logger.info(f"Incoming request from IP: {user_ip}, Sender: {sender}")
 
         urls = URL_REGEX.findall(body)
         if urls:
             result_data = controller.main(urls[0])
-            is_suspicious = result_data.get('trust_score', 100) < 50
+            is_suspicious = result_data.get('trust_score', 0) < 50
             reason = result_data.get('reason', 'Message from {sender} was filtered as suspicious.'.format(sender=sender))
         else:
             is_suspicious = False
@@ -244,9 +196,21 @@ def message_filter():
 
         # Store message
         stored_message = _store_message(user_ip, sender, body, is_suspicious, reason)
-        alert_message = f"⚠️ Security Alert: {reason}"
+
+
+        message_data = {
+            "id": stored_message.get('id', '12345'),  # Use stored message ID or default
+            "ip":user_ip,
+            "sender": sender,
+            "body": f'{body}',
+            "category": "security_alert",
+            "date": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),  # Current UTC timestamp
+            "reason": reason,
+            "isSuspicious": is_suspicious
+        }
+
         broadcast_results = send_security_alert_to_all_users(
-            message=alert_message,
+            message=message_data,
             url=user_ip,
             reason=reason
         )
@@ -266,6 +230,7 @@ def message_filter():
         response_payload = {
             'filter': classification,
             'trust_score': trust_score,
+            'ip:': user_ip,
             'reason': result_data.get('reason', 'No specific reason provided.'),
             'url': url_to_check,
             'age': result_data.get('age'),
@@ -285,6 +250,7 @@ def message_filter():
 def _store_message(user_id, sender, body, is_suspicious, reason):
     message = {
         "id": str(uuid.uuid4()),
+        "ip":user_id,
         "sender": sender,
         "body": body,
         "date": datetime.utcnow().isoformat(),
@@ -356,6 +322,40 @@ def update_json():
         print(f"An error occurred: {str(e)}")
         return "An error occurred: " + str(e), 500
 
+@app.route('/test-push-silent', methods=['POST'])
+def test_push_silent():
+    try:
+        data = request.get_json()
+        device_token = data.get("deviceToken")
+        custom_data = data.get("custom_data", {})
+
+        if not device_token:
+            return jsonify({"error": "Missing deviceToken"}), 400
+
+        # Create a silent notification payload
+        payload = Payload(
+            alert=None,  # No alert for silent notifications
+            badge=None,  # No badge
+            sound=None,  # No sound
+            content_available=True,  # Enable background processing
+            custom=custom_data  # Optional custom data for the app
+        )
+
+        result = send_apns_notification(
+            token_hex=device_token,
+            notification=payload,
+            topic=BUNDLE_ID,
+            priority=NotificationPriority.Immediate  # Can use Low for silent notifications
+        )
+
+        if result["status"] == "success":
+            return jsonify({"status": "Silent push sent successfully", "details": result}), 200
+        else:
+            return jsonify({"error": "Failed to send silent push", "details": result}), 500
+
+    except Exception as e:
+        logger.error(f"Error sending silent push notification: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/test-push', methods=['POST'])
 def test_push():
@@ -398,13 +398,13 @@ def test_push():
 def save_device_token():
     try:
         data = request.get_json()
-        user_ip = data.get('user_ip')
         device_token = data.get('deviceToken')
 
-        if not user_ip or not device_token:
-            return jsonify({"error": "Missing user_ip or deviceToken"}), 400
+        if not device_token:
+            return jsonify({"error": "Missing deviceToken"}), 400
 
-        device_tokens[user_ip] = {
+        # Save the device token as the key in the dictionary
+        device_tokens[device_token] = {
             "deviceToken": device_token,
             "registered_at": datetime.utcnow().isoformat()
         }
