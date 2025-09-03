@@ -1,420 +1,407 @@
+# app.py
 import sys
-from datetime import datetime
+import re
+import json
+import uuid
+import time
+import threading
 import logging
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+from flask import Flask, request, jsonify
+
 from apns2.client import APNsClient, NotificationPriority
 from apns2.credentials import TokenCredentials
 from apns2.payload import Payload
-from flask import Flask, request, render_template, jsonify, send_file
-from bs4 import BeautifulSoup
-import requests
-from urllib.parse import urljoin
-from controller import Controller
-import onetimescript
-from db import db
-import re
-import uuid
-from typing import Optional, Dict, Any
-import json
 
+# ------------------------------------------------------------------------------
+# Flask + Logging
+# ------------------------------------------------------------------------------
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///domains.db'
-db.init_app(app)
-
-# APNs Configuration - REPLACE WITH YOUR ACTUAL VALUES
-APNS_KEY_PATH = 'AuthKey_VM3QPGGY8L.p8'
-TEAM_ID = 'JRXD7XLLMM'  # ← Replace this with your actual Team ID!
-KEY_ID = 'VM3QPGGY8L'
-BUNDLE_ID = 'com.malloc.phishingprotect'
-
-# Initialize APNs client
-apns_client = APNsClient(
-    credentials=TokenCredentials(
-        auth_key_path=APNS_KEY_PATH,
-        auth_key_id=KEY_ID,
-        team_id=TEAM_ID
-    ),
-    use_sandbox=True  # Set to True for development/testing
-)
-
-with app.app_context():
-    db.create_all()
-
-user_message_store = {}
-device_tokens = {}  # Moved to global scope
-controller = Controller()
 
 logging.basicConfig(
     stream=sys.stderr,
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
-URL_REGEX = re.compile(
-    r'(https?://[^\s]+)',
-    re.IGNORECASE
-)
+URL_REGEX = re.compile(r"(https?://[^\s]+)", re.IGNORECASE)
 
+# ------------------------------------------------------------------------------
+# APNs Configuration (Token-based)
+# ------------------------------------------------------------------------------
+APNS_KEY_PATH = "AuthKey_VM3QPGGY8L.p8"  # <-- your .p8 private key
+TEAM_ID = "JRXD7XLLMM"                   # <-- your Apple Team ID
+KEY_ID = "VM3QPGGY8L"                    # <-- your Key ID for the .p8 key
+BUNDLE_ID = "com.malloc.phishingprotect" # <-- your app bundle id
 
-def send_apns_notification(token_hex: str, notification: Payload, topic: Optional[str] = None,
-                           priority: NotificationPriority = NotificationPriority.Immediate,
-                           expiration: Optional[int] = None, collapse_id: Optional[str] = None) -> Dict[str, Any]:
+# ------------------------------------------------------------------------------
+# In-memory stores
+# ------------------------------------------------------------------------------
+# Device registry: token -> { deviceToken, registered_at, last_ip?, last_seen? }
+device_tokens: Dict[str, dict] = {}
+
+# Suspicious events store:
+#   event_id -> {
+#       "ip": str,
+#       "tokens": set[str],
+#       "responded": set[str],
+#       "matched": bool,
+#       "timeout": float(epoch),
+#       "sender": Optional[str],
+#       "body": Optional[str],
+#       "reason": Optional[str]
+#   }
+suspicious_events: Dict[str, dict] = {}
+
+# ------------------------------------------------------------------------------
+# APNs helpers
+# ------------------------------------------------------------------------------
+def send_apns_notification(
+    token_hex: str,
+    notification: Payload,
+    topic: Optional[str] = None,
+    priority: NotificationPriority = NotificationPriority.Immediate,
+    expiration: Optional[int] = None,
+    collapse_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Send a synchronous push notification using your existing APNs client
+    Wrapper to send a synchronous APNs notification and capture a structured result.
     """
     try:
+
+        apns_client = APNsClient(
+            credentials=TokenCredentials(
+                auth_key_path=APNS_KEY_PATH,
+                auth_key_id=KEY_ID,
+                team_id=TEAM_ID,
+            ),
+            use_sandbox=True,  # True for development/testing; False for production
+        )
+
+
         stream_id = apns_client.send_notification_async(
             token_hex, notification, topic, priority, expiration, collapse_id
         )
         result = apns_client.get_notification_result(stream_id)
 
-        if result == 'Success':
-            logger.info(f"Notification sent successfully to token: {token_hex}")
+        if result == "Success":
+            logger.info(f"APNs: delivered to {token_hex[:12]}…")
             return {"status": "success", "message": "Notification delivered"}
         else:
-            from apns2.errors import exception_class_for_reason
             error_msg = f"APNs error: {result}"
-            logger.error(f"Failed to send notification to {token_hex}: {error_msg}")
-            return {"status": "error", "reason": result, "message": str(error_msg)}
+            logger.error(f"APNs: failed to {token_hex[:12]}… -> {error_msg}")
+            return {"status": "error", "reason": result, "message": error_msg}
 
     except Exception as e:
-        logger.error(f"Exception sending notification to {token_hex}: {str(e)}")
+        logger.error(f"APNs exception for {token_hex[:12]}…: {e}")
         return {"status": "error", "reason": "Exception", "message": str(e)}
 
-
-
-# Routes
-@app.route('/apple-app-site-association', methods=['GET', 'POST'])
-def serve_apple_app_site_association():
-    return send_file('static/.well-known1/apple-app-site-association', mimetype='application/json')
-
-
-@app.route('/.well-known/apple-app-site-association', methods=['GET', 'POST'])
-def well_serve_apple_app_site_association():
-    return send_file('static/.well-known1/apple-app-site-association', mimetype='application/json')
-
-
-@app.route('/', methods=['GET', 'POST'])
-def home():
-    try:
-        url = request.form['url']
-        result = controller.main(url)
-        output = result
-    except:
-        output = 'NA'
-    return render_template('index.html', output=output)
-
-
-@app.route('/registered-devices', methods=['GET'])
-def get_registered_devices():
-    return jsonify({
-        "count": len(device_tokens),
-        "devices": device_tokens
-    }), 200
-
-
-def send_security_alert_to_all_users(message, url: str = None, reason: str = None):
+# ------------------------------------------------------------------------------
+# Step 3: Send SILENT notification (content-available) to a single device
+# ------------------------------------------------------------------------------
+def send_silent_notification(device_token: str, *, event_id: str, ip: str) -> Dict[str, Any]:
     """
-    Send security alert push notification to ALL registered users
-
-    Args:
-        message: Alert message
-        url: Suspicious URL (optional)
-        reason: Reason for alert (optional)
+    Sends a silent push with content_available=1 and custom payload:
+        { action: verify_ip, event_id, ip, timestamp }
     """
-    if not device_tokens:
-        logger.warning("No device tokens registered")
-        return {"sent": 0, "failed": 0}
-
-    results = {"sent": 0, "failed": 0}
-
-    # Iterate over device_tokens, where key is the device token and value is the dictionary
-    for device_token, device_info in device_tokens.items():
-        # The device_token is already the key, so we directly use it
-        app_bundle_id = device_info.get('app_bundle_id', BUNDLE_ID)  # Get app_bundle_id, or use default BUNDLE_ID
-
-        custom_data = {
-            "message": message
-        }
-
-        try:
-            payload = Payload(
-                alert=None,  # No alert for silent notifications
-                badge=None,  # No badge
-                sound=None,  # No sound
-                content_available=True,  # Enable background processing
-                custom=custom_data
-            )
-
-            # Send the notification
-            result = send_apns_notification(
-                token_hex=device_token,  # Use device_token
-                notification=payload,
-                topic=app_bundle_id,
-                priority=NotificationPriority.Immediate
-            )
-
-            # Check if the notification was sent successfully
-            if result["status"] == "success":
-                logger.info(f"Security alert sent to {device_token}")
-                results["sent"] += 1
-            else:
-                logger.error(f"Failed to send security alert to {device_token}: {result}")
-                results["failed"] += 1
-
-        except Exception as e:
-            logger.error(f"Error sending security alert to {device_token}: {str(e)}")
-            results["failed"] += 1
-
-    logger.info(f"Broadcast completed: {results['sent']} sent, {results['failed']} failed")
-    return results
-
-@app.route('/message-filter', methods=['POST'])
-def message_filter():
-    try:
-        data = request.get_json()
-
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        sender = data.get('query', {}).get('sender', 'Unknown')
-        body = data.get('query', {}).get('message', {}).get('text', '')
-        # Ensure body is a string
-        if not isinstance(body, str):
-            body = str(body) if body is not None else ''
-
-
-        logger.info(f"Incoming request from IP: {user_ip}, Sender: {sender}")
-
-        urls = URL_REGEX.findall(body)
-        if urls:
-            result_data = controller.main(urls[0])
-            is_suspicious = result_data.get('trust_score', 0) < 50
-            reason = result_data.get('reason', 'Message from {sender} was filtered as suspicious.'.format(sender=sender))
-        else:
-            is_suspicious = False
-            reason = "No URL found"
-
-        # Store message
-        stored_message = _store_message(user_ip, sender, body, is_suspicious, reason)
-
-
-        message_data = {
-            "id": stored_message.get('id', '12345'),  # Use stored message ID or default
-            "ip":user_ip,
-            "sender": sender,
-            "body": f'{body}',
-            "category": "security_alert",
-            "date": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),  # Current UTC timestamp
-            "reason": reason,
-            "isSuspicious": is_suspicious
-        }
-
-        broadcast_results = send_security_alert_to_all_users(
-            message=message_data,
-            url=user_ip,
-            reason=reason
-        )
-
-        logger.info(f"Broadcast results: {broadcast_results}")
-
-        # Extract URLs for response
-        urls = URL_REGEX.findall(body)
-        if not urls:
-            return jsonify({'filter': 'allow', 'reason': 'No URL found in message ' + user_ip}), 200
-
-        url_to_check = urls[0]
-        result_data = controller.main(url_to_check)
-        trust_score = result_data.get('trust_score', 100)
-        classification = 'filter' if trust_score < 50 else 'allow'
-
-        response_payload = {
-            'filter': classification,
-            'trust_score': trust_score,
-            'ip:': user_ip,
-            'reason': result_data.get('reason', 'No specific reason provided.'),
-            'url': url_to_check,
-            'age': result_data.get('age'),
-            'rank': result_data.get('rank'),
-            'is_url_shortened': result_data.get('is_url_shortened'),
-            'hsts_support': result_data.get('hsts_support'),
-            'user_ip': user_ip,
-            'notification_sent': is_suspicious and user_ip in device_tokens
-        }
-
-        return jsonify(response_payload), 200
-
-    except Exception as e:
-        return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
-
-
-def _store_message(user_id, sender, body, is_suspicious, reason):
-    message = {
-        "id": str(uuid.uuid4()),
-        "ip":user_id,
-        "sender": sender,
-        "body": body,
-        "date": datetime.utcnow().isoformat(),
-        "isSuspicious": is_suspicious,
-        "reason": reason
+    custom = {
+        "action": "verify_ip",
+        "event_id": event_id,
+        "ip": ip,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
-    if user_id not in user_message_store:
-        user_message_store[user_id] = []
-    user_message_store[user_id].append(message)
-    user_message_store[user_id] = user_message_store[user_id][-50:]
-    return message
+    payload = Payload(
+        alert=None,               # NO alert -> silent
+        badge=None,
+        sound=None,
+        content_available=True,   # <= required for background wake
+        custom=custom,
+    )
 
+    return send_apns_notification(
+        token_hex=device_token,
+        notification=payload,
+        topic=BUNDLE_ID,
+        priority=NotificationPriority.Immediate,  # deliver promptly
+    )
 
-@app.route('/get-filter-results', methods=['GET'])
-def get_filter_results():
-    user_ip = request.args.get('ip')
-    if not user_ip:
-        return jsonify({'error': 'IP missing'}), 400
-    results = user_message_store.get(user_ip, [])
-    return jsonify(results), 200
+# ------------------------------------------------------------------------------
+# Step 5 & 6: Send USER-FACING alert to a single device
+# ------------------------------------------------------------------------------
+def send_user_alert(
+    device_token: str,
+    *,
+    ip: str,
+    sender: Optional[str],
+    body: Optional[str],
+    reason: Optional[str],
+    event_id: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Sends a visible alert. Includes a short message and includes context in custom data.
+    """
+    title = "⚠️ Security Alert"
+    body_text = reason or f"Suspicious activity detected from {ip}"
+    if sender:
+        body_text += f"\nSender: {sender}"
+    if body:
+        snippet = (body[:120] + "…") if len(body) > 120 else body
+        body_text += f"\nMessage: {snippet}"
 
+    custom = {
+        "action": "open_alert",
+        "event_id": event_id or "",
+        "ip": ip,
+        "reason": reason or "",
+        "sender": sender or "",
+    }
 
-@app.route('/api/check-domain', methods=['POST'])
-def check_domain_api():
-    try:
-        data = request.get_json()
-        url = data.get('url')
-        if not url:
-            return jsonify({'error': 'Missing URL'}), 400
-        result = controller.main(url)
-        return jsonify({
-            'status': result.get('status'),
-            'trust_score': result.get('trust_score'),
-            'reason': result.get('reason', 'No specific reason provided.'),
-            'url': result.get('url'),
-            'age': result.get('age'),
-            'rank': result.get('rank'),
-            'response_status': result.get('response_status'),
-            'is_url_shortened': result.get('is_url_shortened'),
-            'hsts_support': result.get('hsts_support'),
-            'ssl': result.get('ssl'),
-            'whois': result.get('whois'),
-        }), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    payload = Payload(
+        alert={"title": title, "body": body_text},
+        sound="default",
+        badge=1,
+        custom=custom,
+    )
 
+    return send_apns_notification(
+        token_hex=device_token,
+        notification=payload,
+        topic=BUNDLE_ID,
+        priority=NotificationPriority.Immediate,
+    )
 
-@app.route('/update-db')
-def update_db():
-    try:
-        with app.app_context():
-            response = onetimescript.update_db()
-            print("Database populated successfully!")
-            return response, 200
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        return "An error occurred: " + str(e), 500
+# ------------------------------------------------------------------------------
+# Event Orchestration
+# ------------------------------------------------------------------------------
+# Step 2: Create event + broadcast silence
+def start_suspicious_event(
+    *,
+    ip: str,
+    tokens: list[str],
+    sender: Optional[str],
+    body: Optional[str],
+    reason: Optional[str],
+    timeout_seconds: int = 5,
+) -> str:
+    """
+    Creates a new suspicious event, sends silent push to all tokens, and starts
+    a watchdog thread that will send fallback notifications if no matches arrive.
+    """
+    event_id = str(uuid.uuid4())
+    suspicious_events[event_id] = {
+        "ip": ip,
+        "tokens": set(tokens),
+        "responded": set(),
+        "matched": False,
+        "timeout": time.time() + max(timeout_seconds, 1),
+        "sender": sender,
+        "body": body,
+        "reason": reason,
+    }
 
+    # Broadcast silent to all
+    for t in tokens:
+        res = send_silent_notification(t, event_id=event_id, ip=ip)
+        logger.info(f"[Step 3] Silent -> {t[:12]}… ({res.get('status')})")
 
-@app.route('/update-json')
-def update_json():
-    try:
-        with app.app_context():
-            response = onetimescript.update_json()
-            print("JSON updated successfully!")
-            return response, 200
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        return "An error occurred: " + str(e), 500
+    # Watchdog for fallback
+    threading.Thread(
+        target=_watch_event_and_fallback, args=(event_id,), daemon=True
+    ).start()
 
-@app.route('/test-push-silent', methods=['POST'])
-def test_push_silent():
-    try:
-        data = request.get_json()
-        device_token = data.get("deviceToken")
-        custom_data = data.get("custom_data", {})
+    return event_id
 
-        if not device_token:
-            return jsonify({"error": "Missing deviceToken"}), 400
+# Step 6: Fallback after timeout
+def _watch_event_and_fallback(event_id: str):
+    event = suspicious_events.get(event_id)
+    if not event:
+        return
 
-        # Create a silent notification payload
-        payload = Payload(
-            alert=None,  # No alert for silent notifications
-            badge=None,  # No badge
-            sound=None,  # No sound
-            content_available=True,  # Enable background processing
-            custom=custom_data  # Optional custom data for the app
-        )
+    # sleep until timeout
+    sleep_for = max(0, event["timeout"] - time.time())
+    time.sleep(sleep_for)
 
-        result = send_apns_notification(
-            token_hex=device_token,
-            notification=payload,
-            topic=BUNDLE_ID,
-            priority=NotificationPriority.Immediate  # Can use Low for silent notifications
-        )
+    # If not matched, notify unresponsive tokens
+    if not event.get("matched"):
+        ip = event["ip"]
+        sender = event.get("sender")
+        body = event.get("body")
+        reason = event.get("reason")
+        all_tokens = event["tokens"]
+        responded = event["responded"]
+        missing = list(all_tokens - responded)
 
-        if result["status"] == "success":
-            return jsonify({"status": "Silent push sent successfully", "details": result}), 200
-        else:
-            return jsonify({"error": "Failed to send silent push", "details": result}), 500
+        logger.info(f"[Step 6] No matches for event {event_id}. Fallback to {len(missing)} devices.")
+        for t in missing:
+            send_user_alert(t, ip=ip, sender=sender, body=body, reason=reason, event_id=event_id)
 
-    except Exception as e:
-        logger.error(f"Error sending silent push notification: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+    # Cleanup (optional to keep memory small)
+    # You could keep it longer if you want to inspect the event via /events.
+    # Here we keep it so /events can still show recent ones. You can prune later.
 
-@app.route('/test-push', methods=['POST'])
-def test_push():
-    try:
-        data = request.get_json()
-        device_token = data.get("deviceToken")
-        message = data.get("message", "Hello from Flask!")
-        badge = data.get("badge", 1)
-        sound = data.get("sound", "default")
-        custom_data = data.get("custom_data", {})
-
-        if not device_token:
-            return jsonify({"error": "Missing deviceToken"}), 400
-
-        payload = Payload(
-            alert=message,
-            badge=badge,
-            sound=sound,
-            custom=custom_data
-        )
-
-        result = send_apns_notification(
-            token_hex=device_token,
-            notification=payload,
-            topic=BUNDLE_ID,
-            priority=NotificationPriority.Immediate
-        )
-
-        if result["status"] == "success":
-            return jsonify({"status": "Push sent successfully", "details": result}), 200
-        else:
-            return jsonify({"error": "Failed to send push", "details": result}), 500
-
-    except Exception as e:
-        logger.error(f"Error sending push notification: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/save-sender', methods=['POST'])
+# ------------------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------------------
+# Step 1: Register device token on app open
+@app.route("/save-sender", methods=["POST"])
+@app.route("/save-token", methods=["POST"])  # alias, both do the same
 def save_device_token():
+    """
+    Body: { "deviceToken": "<apns token hex>" }
+    """
     try:
-        data = request.get_json()
-        device_token = data.get('deviceToken')
+        data = request.get_json(force=True, silent=False) or {}
+        device_token = data.get("deviceToken")
 
         if not device_token:
             return jsonify({"error": "Missing deviceToken"}), 400
 
-        # Save the device token as the key in the dictionary
         device_tokens[device_token] = {
             "deviceToken": device_token,
-            "registered_at": datetime.utcnow().isoformat()
+            "registered_at": datetime.utcnow().isoformat() + "Z",
+            # "last_ip": "x.x.x.x",  # set later via /report-ip
+            # "last_seen": timestamp
         }
-
-        return jsonify({"status": "Device token saved successfully"}), 200
+        logger.info(f"[Step 1] Registered device: {device_token[:12]}…; total={len(device_tokens)}")
+        return jsonify({"status": "Device token saved", "count": len(device_tokens)}), 200
 
     except Exception as e:
+        logger.exception("save_device_token error")
         return jsonify({"error": str(e)}), 500
 
+# Step 2: Receive filtered/suspicious message → create event & broadcast silent
+@app.route("/message-filter", methods=["POST"])
+def message_filter():
+    """
+    Expected JSON:
+    {
+      "ip": "46.199.91.178",
+      "sender": "Alphamega",
+      "body": "Phishy text...",
+      "reason": "Potential phishing detected",
+      "timeout": 5   # optional seconds to wait before fallback
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=False) or {}
 
-if __name__ == '__main__':
-    app.debug = True
-    app.run()
+        suspicious_ip = data.get("ip")
+        if not suspicious_ip:
+            return jsonify({"error": "Missing 'ip'"}), 400
+
+        sender = data.get("sender")
+        body = data.get("body")
+        reason = data.get("reason", "Suspicious message detected")
+        timeout_seconds = int(data.get("timeout", 5))
+
+        tokens = list(device_tokens.keys())
+        if not tokens:
+            logger.warning("[Step 2] No registered devices to notify.")
+            return jsonify({"error": "No registered devices"}), 400
+
+        event_id = start_suspicious_event(
+            ip=suspicious_ip,
+            tokens=tokens,
+            sender=sender,
+            body=body,
+            reason=reason,
+            timeout_seconds=timeout_seconds,
+        )
+        logger.info(f"[Step 2/3] Created event {event_id} for IP {suspicious_ip}; silent broadcast started.")
+
+        return jsonify({"status": "Silent notifications dispatched", "event_id": event_id}), 200
+
+    except Exception as e:
+        logger.exception("message_filter error")
+        return jsonify({"error": str(e)}), 500
+
+# Step 4: Device reports back with its IP (after receiving the silent push)
+@app.route("/report-ip", methods=["POST"])
+def report_ip():
+    """
+    Expected JSON:
+    {
+      "deviceToken": "<token>",
+      "ip": "x.x.x.x",
+      "event_id": "<event id from silent push>"
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=False) or {}
+        token = data.get("deviceToken")
+        ip = data.get("ip")
+        event_id = data.get("event_id")
+
+        if not token or not ip or not event_id:
+            return jsonify({"error": "Missing deviceToken, ip, or event_id"}), 400
+
+        # Update device record
+        info = device_tokens.get(token)
+        if not info:
+            return jsonify({"error": "Unknown deviceToken"}), 404
+
+        info["last_ip"] = ip
+        info["last_seen"] = datetime.utcnow().isoformat() + "Z"
+
+        # Update event
+        event = suspicious_events.get(event_id)
+        if not event:
+            return jsonify({"error": "Invalid or expired event_id"}), 400
+
+        event["responded"].add(token)
+        logger.info(f"[Step 4] Device {token[:12]}… reported IP {ip} for event {event_id}")
+
+        # Step 5: If match, send user-facing push to THIS device
+        if ip == event["ip"]:
+            if not event.get("matched"):
+                event["matched"] = True
+                logger.info(f"[Step 5] MATCH for event {event_id}. Alerting {token[:12]}…")
+            # Send alert (even if already matched previously, you may still alert this device)
+            send_user_alert(
+                token,
+                ip=event["ip"],
+                sender=event.get("sender"),
+                body=event.get("body"),
+                reason=event.get("reason"),
+                event_id=event_id,
+            )
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        logger.exception("report_ip error")
+        return jsonify({"error": str(e)}), 500
+
+# Utility: list devices
+@app.route("/registered-devices", methods=["GET"])
+def get_registered_devices():
+    return jsonify({"count": len(device_tokens), "devices": device_tokens}), 200
+
+# Utility: inspect events (current in-memory snapshot)
+@app.route("/events", methods=["GET"])
+def get_events():
+    # present a simplified snapshot
+    out = {}
+    for ev_id, ev in suspicious_events.items():
+        out[ev_id] = {
+            "ip": ev["ip"],
+            "sender": ev.get("sender"),
+            "reason": ev.get("reason"),
+            "tokens_total": len(ev["tokens"]),
+            "responded": list(ev["responded"]),
+            "matched": ev["matched"],
+            "timeout_at": ev["timeout"],
+        }
+    return jsonify(out), 200
+
+# ------------------------------------------------------------------------------
+# Run
+# ------------------------------------------------------------------------------
+if __name__ == "__main__":
+    # For Azure Container Apps (or containers in general), bind to 0.0.0.0:8080
+    app.run(host="0.0.0.0", port=8080, debug=True)
