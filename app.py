@@ -9,11 +9,13 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file, render_template
 
 from apns2.client import APNsClient, NotificationPriority
 from apns2.credentials import TokenCredentials
 from apns2.payload import Payload
+
+from controller import Controller
 
 # ------------------------------------------------------------------------------
 # Flask + Logging
@@ -43,7 +45,7 @@ BUNDLE_ID = "com.malloc.phishingprotect" # <-- your app bundle id
 # ------------------------------------------------------------------------------
 # Device registry: token -> { deviceToken, registered_at, last_ip?, last_seen? }
 device_tokens: Dict[str, dict] = {}
-
+controller = Controller()
 # Suspicious events store:
 #   event_id -> {
 #       "ip": str,
@@ -56,6 +58,30 @@ device_tokens: Dict[str, dict] = {}
 #       "reason": Optional[str]
 #   }
 suspicious_events: Dict[str, dict] = {}
+
+
+# Routes
+@app.route('/apple-app-site-association', methods=['GET', 'POST'])
+def serve_apple_app_site_association():
+    return send_file('static/.well-known1/apple-app-site-association', mimetype='application/json')
+
+
+@app.route('/.well-known/apple-app-site-association', methods=['GET', 'POST'])
+def well_serve_apple_app_site_association():
+    return send_file('static/.well-known1/apple-app-site-association', mimetype='application/json')
+
+
+@app.route('/', methods=['GET', 'POST'])
+def home():
+    try:
+        url = request.form['url']
+        result = controller.main(url)
+        output = result
+    except:
+        output = 'NA'
+    return render_template('index.html', output=output)
+
+
 
 # ------------------------------------------------------------------------------
 # APNs helpers
@@ -140,13 +166,19 @@ def send_user_alert(
     sender: Optional[str],
     body: Optional[str],
     reason: Optional[str],
+    suspicious: bool,
     event_id: Optional[str],
 ) -> Dict[str, Any]:
     """
-    Sends a visible alert. Includes a short message and includes context in custom data.
+    Sends a visible alert. Includes a short message and saves it for later fetching.
     """
-    title = "⚠️ Security Alert"
-    body_text = reason or f"Suspicious activity detected from {ip}"
+
+    body_text=""
+    title = "Message Received"
+   # body_text = f"Safe message received from  {sender}"
+    if suspicious:
+        title = "⚠️ Security Alert"
+       # body_text = reason or f"Suspicious activity detected from {sender}"
     if sender:
         body_text += f"\nSender: {sender}"
     if body:
@@ -157,8 +189,10 @@ def send_user_alert(
         "action": "open_alert",
         "event_id": event_id or "",
         "ip": ip,
+        "body": body_text or "",
         "reason": reason or "",
         "sender": sender or "",
+        "isSuspicious": suspicious
     }
 
     payload = Payload(
@@ -167,6 +201,20 @@ def send_user_alert(
         badge=1,
         custom=custom,
     )
+
+    # Save user-facing alert in-memory for later fetch
+    event = suspicious_events.get(event_id)
+    if event:
+        event.setdefault("user_alerts", {})[device_token] = {
+            "title": title,
+            "body": body_text,
+            "ip": ip,
+            "id": event_id,
+            "sender": sender,
+            "reason": reason,
+            "event_id": event_id,
+            "date": datetime.utcnow().isoformat() + "Z",
+        }
 
     return send_apns_notification(
         token_hex=device_token,
@@ -186,6 +234,7 @@ def start_suspicious_event(
     sender: Optional[str],
     body: Optional[str],
     reason: Optional[str],
+    suspicious: bool,
     timeout_seconds: int = 5,
 ) -> str:
     """
@@ -196,18 +245,22 @@ def start_suspicious_event(
     suspicious_events[event_id] = {
         "ip": ip,
         "tokens": set(tokens),
-        "responded": set(),
+        "responded": set(),  # devices that reported IP
+        "fetched": set(),  # devices that already fetched notifications
         "matched": False,
         "timeout": time.time() + max(timeout_seconds, 1),
         "sender": sender,
         "body": body,
         "reason": reason,
+        "suspicious":suspicious,
+        "user_alerts": {},  # token -> alert payload saved for fetching
     }
 
     # Broadcast silent to all
     for t in tokens:
         res = send_silent_notification(t, event_id=event_id, ip=ip)
         logger.info(f"[Step 3] Silent -> {t[:12]}… ({res.get('status')})")
+
 
     # Watchdog for fallback
     threading.Thread(
@@ -244,6 +297,7 @@ def _watch_event_and_fallback(event_id: str):
     # You could keep it longer if you want to inspect the event via /events.
     # Here we keep it so /events can still show recent ones. You can prune later.
 
+
 # ------------------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------------------
@@ -274,51 +328,95 @@ def save_device_token():
         logger.exception("save_device_token error")
         return jsonify({"error": str(e)}), 500
 
-# Step 2: Receive filtered/suspicious message → create event & broadcast silent
-@app.route("/message-filter", methods=["POST"])
-def message_filter():
-    """
-    Expected JSON:
-    {
-      "ip": "46.199.91.178",
-      "sender": "Alphamega",
-      "body": "Phishy text...",
-      "reason": "Potential phishing detected",
-      "timeout": 5   # optional seconds to wait before fallback
-    }
-    """
+
+
+@app.route('/message-filter', methods=['POST'])
+def message_filter_old():
     try:
-        data = request.get_json(force=True, silent=False) or {}
+        data = request.get_json()
 
-        suspicious_ip = data.get("ip")
-        if not suspicious_ip:
-            return jsonify({"error": "Missing 'ip'"}), 400
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        sender = data.get('query', {}).get('sender', 'Unknown')
+        body = data.get('query', {}).get('message', {}).get('text', '')
+        # Ensure body is a string
+        if not isinstance(body, str):
+            body = str(body) if body is not None else ''
 
-        sender = data.get("sender")
-        body = data.get("body")
-        reason = data.get("reason", "Suspicious message detected")
-        timeout_seconds = int(data.get("timeout", 5))
 
+        logger.info(f"Incoming request from IP: {user_ip}, Sender: {sender}")
         tokens = list(device_tokens.keys())
+        urls = URL_REGEX.findall(body)
+        if urls:
+            result_data = controller.main(urls[0])
+            is_suspicious = result_data.get('trust_score', 0) < 50
+            reason = result_data.get('reason', 'Message from {sender} was filtered as suspicious.'.format(sender=sender))
+        else:
+            is_suspicious = False
+            reason = "No suspicious indicators detected"
+            event_id = start_suspicious_event(
+                ip=user_ip,
+                tokens=tokens,
+                sender=sender,
+                body=body,
+                suspicious=False,
+                reason=reason,
+                timeout_seconds=5,
+            )
+            return jsonify({'filter': 'allow', 'reason': "No suspicious indicators detected" + user_ip}), 200
+
+
         if not tokens:
             logger.warning("[Step 2] No registered devices to notify.")
             return jsonify({"error": "No registered devices"}), 400
+        # Extract URLs for response
+        urls = URL_REGEX.findall(body)
+        if not urls:
+            event_id = start_suspicious_event(
+                ip=user_ip,
+                tokens=tokens,
+                sender=sender,
+                body=body,
+                suspicious=False,
+                reason=reason,
+                timeout_seconds=5,
+            )
+            return jsonify({'filter': 'allow', 'reason': "No suspicious indicators detected" + user_ip}), 200
+
+        url_to_check = urls[0]
+        result_data = controller.main(url_to_check)
+        trust_score = result_data.get('trust_score', 100)
+        classification = 'filter' if trust_score < 50 else 'allow'
 
         event_id = start_suspicious_event(
-            ip=suspicious_ip,
+            ip=user_ip,
             tokens=tokens,
             sender=sender,
             body=body,
+            suspicious=True,
             reason=reason,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=5,
         )
-        logger.info(f"[Step 2/3] Created event {event_id} for IP {suspicious_ip}; silent broadcast started.")
 
-        return jsonify({"status": "Silent notifications dispatched", "event_id": event_id}), 200
+        response_payload = {
+            'filter': classification,
+            'trust_score': trust_score,
+            'ip:': user_ip,
+            'reason': result_data.get('reason', 'No specific reason provided.'),
+            'url': url_to_check,
+            'age': result_data.get('age'),
+            'rank': result_data.get('rank'),
+            'is_url_shortened': result_data.get('is_url_shortened'),
+            'hsts_support': result_data.get('hsts_support'),
+            'user_ip': user_ip,
+            'notification_sent': is_suspicious and user_ip in device_tokens
+        }
+
+        return jsonify(response_payload), 200
 
     except Exception as e:
-        logger.exception("message_filter error")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
+
+
 
 # Step 4: Device reports back with its IP (after receiving the silent push)
 @app.route("/report-ip", methods=["POST"])
@@ -368,6 +466,7 @@ def report_ip():
                 sender=event.get("sender"),
                 body=event.get("body"),
                 reason=event.get("reason"),
+                suspicious= event.get("suspicious"),
                 event_id=event_id,
             )
 
@@ -381,6 +480,95 @@ def report_ip():
 @app.route("/registered-devices", methods=["GET"])
 def get_registered_devices():
     return jsonify({"count": len(device_tokens), "devices": device_tokens}), 200
+
+
+@app.route("/get-missed-notifications", methods=["POST"])
+def get_missed_notifications():
+    """
+    Expected JSON:
+    {
+        "deviceToken": "<token>"
+    }
+
+    Returns all events that were sent to this device but not yet responded/fetched.
+    Removes the device token from `responded` after sending so it's not sent again.
+    """
+    try:
+        data = request.get_json(force=True, silent=False) or {}
+        token = data.get("deviceToken")
+
+        if not token:
+            return jsonify({"error": "Missing deviceToken"}), 400
+
+        if token not in device_tokens:
+            return jsonify({"error": "Unknown deviceToken"}), 404
+
+        missed_messages = []
+
+        # Gather events targeted to this device and not yet responded
+        for event_id, event in suspicious_events.items():
+            responded_set = event.get("responded", set())
+            if token in responded_set:
+                # Build the SMS payload
+                sms = {
+                    "id": event_id,
+                    "sender": event.get("sender") or "",
+                    "body": event.get("body") or "",
+                    "ip": event["ip"],
+                    "date": datetime.utcnow().isoformat() + "Z",
+                    "isSuspicious":  event.get("suspicious"),
+                    "reason": event.get("reason") or "",
+                    "category": "security_alert",
+                }
+                missed_messages.append(sms)
+
+                # ✅ Remove token from responded to mark it "sent"
+                responded_set.discard(token)
+                event["responded"] = responded_set
+
+        logger.info(f"[Fetch Missed] {len(missed_messages)} messages for {token[:12]}…")
+        return jsonify(missed_messages), 200
+
+    except Exception as e:
+        logger.exception("get_missed_notifications error")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/acknowledge-notification", methods=["POST"])
+def acknowledge_notification():
+    """
+    Device reports that it received a message for a specific event_id.
+    Body:
+    {
+        "deviceToken": "<token>",
+        "event_id": "<event id>"
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=False) or {}
+        token = data.get("deviceToken")
+        event_id = data.get("event_id")
+
+        if not token or not event_id:
+            return jsonify({"error": "Missing deviceToken or event_id"}), 400
+
+        if event_id not in suspicious_events:
+            return jsonify({"error": "Invalid event_id"}), 404
+
+        event = suspicious_events[event_id]
+        responded_set = event.get("responded", set())
+
+        if token in responded_set:
+            responded_set.remove(token)
+            event["responded"] = responded_set
+            logger.info(f"Device {token[:12]} acknowledged event {event_id}")
+            return jsonify({"status": "acknowledged"}), 200
+        else:
+            return jsonify({"status": "already acknowledged"}), 200
+
+    except Exception as e:
+        logger.exception("acknowledge_notification error")
+        return jsonify({"error": str(e)}), 500
+
 
 # Utility: inspect events (current in-memory snapshot)
 @app.route("/events", methods=["GET"])
