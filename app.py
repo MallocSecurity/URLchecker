@@ -168,22 +168,22 @@ def send_user_alert(
     reason: Optional[str],
     suspicious: bool,
     event_id: Optional[str],
-) -> Dict[str, Any]:
+) -> Optional[dict[str, Any]]:
     """
     Sends a visible alert. Includes a short message and saves it for later fetching.
     """
 
     body_text=""
-    title = "Message Received"
+    title = f"{ip}|Message Received"
+
    # body_text = f"Safe message received from  {sender}"
     if suspicious:
-        title = "⚠️ Security Alert"
+        title = f"{ip}|⚠️Security Alert"
        # body_text = reason or f"Suspicious activity detected from {sender}"
-    if sender:
-        body_text += f"\nSender: {sender}"
+
     if body:
         snippet = (body[:120] + "…") if len(body) > 120 else body
-        body_text += f"\nMessage: {snippet}"
+        body_text += f"{snippet}"
 
     custom = {
         "action": "open_alert",
@@ -195,11 +195,13 @@ def send_user_alert(
         "isSuspicious": suspicious
     }
 
+
     payload = Payload(
-        alert={"title": title, "body": body_text},
+        alert={"title": title, "body":body_text},
         sound="default",
         badge=1,
         custom=custom,
+        mutable_content=True
     )
 
     # Save user-facing alert in-memory for later fetch
@@ -213,15 +215,19 @@ def send_user_alert(
             "sender": sender,
             "reason": reason,
             "event_id": event_id,
+            "suspicious": suspicious,
             "date": datetime.utcnow().isoformat() + "Z",
         }
 
-    return send_apns_notification(
-        token_hex=device_token,
-        notification=payload,
-        topic=BUNDLE_ID,
-        priority=NotificationPriority.Immediate,
-    )
+    if suspicious:
+        return send_apns_notification(
+            token_hex=device_token,
+            notification=payload,
+            topic=BUNDLE_ID,
+            priority=NotificationPriority.Immediate,
+        )
+    return None
+
 
 # ------------------------------------------------------------------------------
 # Event Orchestration
@@ -291,7 +297,7 @@ def _watch_event_and_fallback(event_id: str):
 
         logger.info(f"[Step 6] No matches for event {event_id}. Fallback to {len(missing)} devices.")
         for t in missing:
-            send_user_alert(t, ip=ip, sender=sender, body=body, reason=reason, event_id=event_id)
+            send_user_alert(t, ip=ip, sender=sender, body=body, reason=reason, event_id=event_id, suspicious=event.get("suspicious", False))
 
     # Cleanup (optional to keep memory small)
     # You could keep it longer if you want to inspect the event via /events.
@@ -342,13 +348,13 @@ def message_filter_old():
         if not isinstance(body, str):
             body = str(body) if body is not None else ''
 
-
         logger.info(f"Incoming request from IP: {user_ip}, Sender: {sender}")
+        logger.info(f"{data.get('query', {})}")
         tokens = list(device_tokens.keys())
         urls = URL_REGEX.findall(body)
         if urls:
             result_data = controller.main(urls[0])
-            is_suspicious = result_data.get('trust_score', 0) < 50
+            is_suspicious = result_data.get('trust_score', 60) < 50
             reason = result_data.get('reason', 'Message from {sender} was filtered as suspicious.'.format(sender=sender))
         else:
             is_suspicious = False
@@ -384,7 +390,7 @@ def message_filter_old():
 
         url_to_check = urls[0]
         result_data = controller.main(url_to_check)
-        trust_score = result_data.get('trust_score', 100)
+        trust_score = result_data.get('trust_score', 60)
         classification = 'filter' if trust_score < 50 else 'allow'
 
         event_id = start_suspicious_event(
@@ -398,7 +404,7 @@ def message_filter_old():
         )
 
         response_payload = {
-            'filter': classification,
+            'filter': "filter",
             'trust_score': trust_score,
             'ip:': user_ip,
             'reason': result_data.get('reason', 'No specific reason provided.'),
@@ -417,6 +423,35 @@ def message_filter_old():
         return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
 
 
+
+@app.route('/api/check-domain', methods=['POST'])
+def check_domain_api():
+    try:
+        data = request.get_json()
+        url = data.get('url')
+        if not url:
+            return jsonify({'error': 'Missing URL'}), 400
+        result = controller.main(url)
+        trust_score = result.get("trust_score")
+
+        if trust_score is None:
+            trust_score = 60
+
+        return jsonify({
+            'status': result.get('status'),
+            'trust_score': trust_score,
+            'reason': result.get('reason', 'No specific reason provided.'),
+            'url': result.get('url'),
+            'age': result.get('age'),
+            'rank': result.get('rank'),
+            'response_status': result.get('response_status'),
+            'is_url_shortened': result.get('is_url_shortened'),
+            'hsts_support': result.get('hsts_support'),
+            'ssl': result.get('ssl'),
+            'whois': result.get('whois'),
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Step 4: Device reports back with its IP (after receiving the silent push)
 @app.route("/report-ip", methods=["POST"])
