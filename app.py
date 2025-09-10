@@ -407,7 +407,7 @@ def message_filter_old():
             'filter': "filter",
             'trust_score': trust_score,
             'ip:': user_ip,
-            'reason': result_data.get('reason', 'No specific reason provided.'),
+            'reason': result_data.get('reason', 'Suspicious URL detected'),
             'url': url_to_check,
             'age': result_data.get('age'),
             'rank': result_data.get('rank'),
@@ -422,6 +422,70 @@ def message_filter_old():
     except Exception as e:
         return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
 
+@app.route('/message-filter-android', methods=['POST'])
+def message_filter_android():
+    try:
+        data = request.get_json()
+
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        sender = data.get('query', {}).get('sender', 'Unknown')
+        body = data.get('query', {}).get('message', {}).get('text', '')
+        # Ensure body is a string
+        if not isinstance(body, str):
+            body = str(body) if body is not None else ''
+
+        logger.info(f"Incoming request from IP: {user_ip}, Sender: {sender}")
+        logger.info(f"{data.get('query', {})}")
+        tokens = list(device_tokens.keys())
+        urls = URL_REGEX.findall(body)
+        if urls:
+            result_data = controller.main(urls[0])
+            is_suspicious = result_data.get('trust_score', 60) < 50
+            reason = result_data.get('reason', 'Message from {sender} was filtered as suspicious.'.format(sender=sender))
+        else:
+            is_suspicious = False
+            reason = "No suspicious indicators detected"
+            return jsonify({'filter': 'allow', 'reason': "No suspicious indicators detected" + user_ip}), 200
+
+
+        # Extract URLs for response
+        urls = URL_REGEX.findall(body)
+        if not urls:
+            event_id = start_suspicious_event(
+                ip=user_ip,
+                tokens=tokens,
+                sender=sender,
+                body=body,
+                suspicious=False,
+                reason=reason,
+                timeout_seconds=5,
+            )
+            return jsonify({'filter': 'allow', 'reason': "No suspicious indicators detected" + user_ip}), 200
+
+        url_to_check = urls[0]
+        result_data = controller.main(url_to_check)
+        trust_score = result_data.get('trust_score', 60)
+        classification = 'filter' if trust_score < 50 else 'allow'
+
+
+        response_payload = {
+            'filter': "filter",
+            'trust_score': trust_score,
+            'ip:': user_ip,
+            'reason': result_data.get('reason', 'Suspicious URL detected'),
+            'url': url_to_check,
+            'age': result_data.get('age'),
+            'rank': result_data.get('rank'),
+            'is_url_shortened': result_data.get('is_url_shortened'),
+            'hsts_support': result_data.get('hsts_support'),
+            'user_ip': user_ip,
+            'notification_sent': is_suspicious and user_ip in device_tokens
+        }
+
+        return jsonify(response_payload), 200
+
+    except Exception as e:
+        return jsonify({'filter': 'allow', 'reason': f'Error: {str(e)}'}), 200
 
 
 @app.route('/api/check-domain', methods=['POST'])
@@ -439,7 +503,7 @@ def check_domain_api():
 
         return jsonify({
             'status': result.get('status'),
-            'trust_score': trust_score,
+            'trust_score': result.get('trust_score'),
             'reason': result.get('reason', 'No specific reason provided.'),
             'url': result.get('url'),
             'age': result.get('age'),
