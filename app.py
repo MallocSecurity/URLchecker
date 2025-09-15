@@ -401,7 +401,7 @@ def start_suspicious_event(
     body: Optional[str],
     reason: Optional[str],
     suspicious: bool,
-    timeout_seconds: int = 10,
+    timeout_seconds: int = 60,
 ) -> str:
     """
     Creates a new suspicious event, sends silent push to all tokens, and starts
@@ -477,13 +477,47 @@ def _watch_event_and_fallback(event_id: str):
         responded = event["responded"]
 
         logger.info(f"[Step 6] No matches for event {event_id}. Fallback to {len(tokens)} devices.")
-        for t in tokens:
-            send_user_alert(t, ip=ip, sender=sender, body=body, reason=reason, event_id=event_id, suspicious=event.get("suspicious", False))
+        message = f"[Step 6] No matches for event {event_id}. Fallback to {len(tokens)} devices. Body: {body} . Reason: {reason} . Responded: {responded} IP: {ip}"
+        send_slack_message(message)
+      # no matches for event. dont fallback
+      # for t in tokens:
+      #      send_user_alert(t, ip=ip, sender=sender, body=body, reason=reason, event_id=event_id, suspicious=event.get("suspicious", False))
 
     # Cleanup (optional to keep memory small)
     # You could keep it longer if you want to inspect the event via /events.
     # Here we keep it so /events can still show recent ones. You can prune later.
 
+
+
+
+def send_slack_message(message, username="Bot", icon_emoji=":robot_face:"):
+    """
+    Send a message payload to a Slack webhook.
+
+    :param message: The text message to send
+    :param username: The display name for the bot
+    :param icon_emoji: Emoji icon for the bot
+    """
+    # Set your Slack webhook URL here
+    webhook_url = "https://hooks.slack.com/services/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"
+
+    payload = {
+        "text": message,
+        "username": username,
+        "icon_emoji": icon_emoji
+    }
+
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(webhook_url, data=json.dumps(payload), headers=headers)
+
+    if response.status_code != 200:
+        raise Exception(f"Request to Slack returned an error {response.status_code}, "
+                        f"the response is:\n{response.text}")
+    return response.text
+
+
+# Example usage:
+# send_slack_message("Hello from Python!")
 
 # ------------------------------------------------------------------------------
 # Routes
@@ -522,6 +556,8 @@ def save_device_token():
             # last_ip and last_seen will be updated via /report-ip
         }
         logger.info(f"[Step 1] Registered device: {device_token[:12]}…; total={len(device_tokens)}")
+        message = f"[Step 1] Registered device: {device_token[:12]}…; total={len(device_tokens)}"
+        send_slack_message(message)
         # -----------------------------------
 
         return jsonify({"status": "Device token saved", "count": len(device_tokens)}), 200
@@ -599,7 +635,8 @@ def message_filter_old_db():
 
                 if is_suspicious:
                     message_suspicious = True
-
+                    message = f" Suspicious URL Detected: {url}"
+                    send_slack_message(message)
             except Exception as db_exc:
                 logger.exception(f"Failed to process URL {url}: {db_exc}")
 
@@ -612,7 +649,7 @@ def message_filter_old_db():
                 body=body,
                 suspicious=False,
                 reason="No suspicious indicators detected",
-                timeout_seconds=10,
+                timeout_seconds=60,
             )
             return jsonify({'filter': 'allow', 'reason': "No suspicious indicators detected"}), 200
 
@@ -625,7 +662,7 @@ def message_filter_old_db():
                 body=body,
                 suspicious=True,
                 reason="Suspicious URL detected",
-                timeout_seconds=10,
+                timeout_seconds=60,
             )
             return jsonify({
                 'filter': "filter",
