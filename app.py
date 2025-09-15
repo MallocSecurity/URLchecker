@@ -9,9 +9,9 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 from urllib.parse import quote_plus
-
+import requests
 from flask import Flask, request, jsonify, send_file, render_template
-
+from dotenv import load_dotenv
 from apns2.client import APNsClient, NotificationPriority
 from apns2.credentials import TokenCredentials
 from apns2.payload import Payload
@@ -20,9 +20,11 @@ from controller import Controller
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-
+load_dotenv()
 app = Flask(__name__)
 
+
+slack_url = os.environ.get("SLACK_WEBHOOK")
 # Original Azure connection string
 raw_conn = os.getenv("AZURE_POSTGRESQL_CONNECTIONSTRING")
 
@@ -315,7 +317,7 @@ def send_user_alert(
 
    # body_text = f"Safe message received from  {sender}"
     if suspicious:
-        title = f"{ip}|⚠️Security Alert"
+        title = f"{ip}|⚠️Suspicious SMS received"
        # body_text = reason or f"Suspicious activity detected from {sender}"
 
     if body:
@@ -379,7 +381,8 @@ def send_user_alert(
             db.session.commit()
         except Exception as db_exc:
             logger.exception(f"Failed to save user alert for {device_token[:12]}: {db_exc}")
-
+            message = f"Failed to save user alert for {device_token[:12]}: {db_exc}"
+            send_slack_message(message)
         return send_apns_notification(
             token_hex=device_token,
             notification=payload,
@@ -451,9 +454,9 @@ def start_suspicious_event(
 
 
     # Watchdog for fallback
-    threading.Thread(
-        target=_watch_event_and_fallback, args=(event_id,), daemon=True
-    ).start()
+   # threading.Thread(
+   #     target=_watch_event_and_fallback, args=(event_id,), daemon=True
+   # ).start()
 
     return event_id
 
@@ -499,7 +502,7 @@ def send_slack_message(message, username="Bot", icon_emoji=":robot_face:"):
     :param icon_emoji: Emoji icon for the bot
     """
     # Set your Slack webhook URL here
-    webhook_url = "https://hooks.slack.com/services/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"
+    webhook_url = slack_url
 
     payload = {
         "text": message,
@@ -1018,25 +1021,24 @@ def get_missed_notifications():
         missed_messages = []
 
         # Gather events targeted to this device and not yet responded
-        for event_id, event in suspicious_events.items():
+        for event_id, event in list(suspicious_events.items()):
             responded_set = event.get("responded", set())
+
             if token in responded_set:
-                # Build the SMS payload
                 sms = {
                     "id": event_id,
                     "sender": event.get("sender") or "",
                     "body": event.get("body") or "",
-                    "ip": event["ip"],
+                    "ip": event.get("ip"),
                     "date": datetime.utcnow().isoformat() + "Z",
-                    "isSuspicious":  event.get("suspicious"),
+                    "isSuspicious": event.get("suspicious"),
                     "reason": event.get("reason") or "",
                     "category": "security_alert",
                 }
                 missed_messages.append(sms)
 
-                # ✅ Remove token from responded to mark it "sent"
-                responded_set.discard(token)
-                event["responded"] = responded_set
+                # ✅ Safe removal after iterating over the copy
+                suspicious_events.pop(event_id, None)
 
         logger.info(f"[Fetch Missed] {len(missed_messages)} messages for {token[:12]}…")
         return jsonify(missed_messages), 200
